@@ -46,6 +46,18 @@ pub mod voting {
         Ok(())
     }
 
+    // just for reference to show candidates' votes
+    pub fn get_poll_results(ctx: Context<GetPollResults>, _poll_id: u64) -> Result<()> {
+        let poll = &ctx.accounts.poll;
+        msg!("Poll ID: {}", poll.poll_id);
+        msg!("Total Votes: {}", poll.total_votes);
+
+        for candidate in ctx.remaining_accounts.iter() {
+            let candidate_account = Account::<Candidate>::try_from(candidate)?;
+            msg!("Candidate: {} - Votes: {}", candidate_account.candidate_name, candidate_account.candidate_votes);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -57,7 +69,7 @@ pub struct Vote<'info> {
     #[account(
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -81,7 +93,7 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -117,6 +129,16 @@ pub struct InitializePoll<'info> {
     )]
     pub poll: Account<'info, Poll>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(poll_id: u64)]
+pub struct GetPollResults<'info> {
+    #[account(
+        seeds = [poll_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub poll: Account<'info, Poll>,
 }
 
 #[account]

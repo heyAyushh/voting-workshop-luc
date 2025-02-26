@@ -35,6 +35,14 @@ pub mod voting {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        let clock = Clock::get()?;
+        let current_time = clock.unix_timestamp as u64; // Reference: https://www.unixtimestamp.com/ as Ayush suggested
+        let poll = &mut ctx.accounts.poll;
+    
+        // Voting time chrck
+        require!(current_time >= poll.poll_start, VotingError::PollNotStarted);
+        require!(current_time <= poll.poll_end, VotingError::PollEnded);
+    
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1;
         let poll = &mut ctx.accounts.poll;
@@ -46,7 +54,6 @@ pub mod voting {
         Ok(())
     }
 
-    // just for reference to show candidates' votes
     pub fn get_poll_results(ctx: Context<GetPollResults>, _poll_id: u64) -> Result<()> {
         let poll = &ctx.accounts.poll;
         msg!("Poll ID: {}", poll.poll_id);
@@ -151,4 +158,12 @@ pub struct Poll {
     pub poll_end: u64,
     pub candidate_amount: u64,
     pub total_votes: u64,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Voting has not started yet.")]
+    PollNotStarted,
+    #[msg("Voting has ended.")]
+    PollEnded,
 }

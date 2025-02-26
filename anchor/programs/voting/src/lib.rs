@@ -20,6 +20,7 @@ pub mod voting {
         poll.poll_start = poll_start;
         poll.poll_end = poll_end;
         poll.candidate_amount = 0;
+        poll.total_votes = 0;
         Ok(())
     }
 
@@ -34,14 +35,36 @@ pub mod voting {
     }
 
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        let clock = Clock::get()?;
+        let current_time = clock.unix_timestamp as u64; // Reference: https://www.unixtimestamp.com/ as Ayush suggested
+        let poll = &mut ctx.accounts.poll;
+    
+        // Voting time chrck
+        require!(current_time >= poll.poll_start, VotingError::PollNotStarted);
+        require!(current_time <= poll.poll_end, VotingError::PollEnded);
+    
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1;
+        let poll = &mut ctx.accounts.poll;
+        poll.total_votes += 1;
 
         msg!("Voted for candidate: {}", candidate.candidate_name);
-        msg!("Votes: {}", candidate.candidate_votes);
+        msg!("Candidate Votes: {}", candidate.candidate_votes);
+        msg!("Total Votes in Poll: {}", poll.total_votes);
         Ok(())
     }
 
+    pub fn get_poll_results(ctx: Context<GetPollResults>, _poll_id: u64) -> Result<()> {
+        let poll = &ctx.accounts.poll;
+        msg!("Poll ID: {}", poll.poll_id);
+        msg!("Total Votes: {}", poll.total_votes);
+
+        for candidate in ctx.remaining_accounts.iter() {
+            let candidate_account = Account::<Candidate>::try_from(candidate)?;
+            msg!("Candidate: {} - Votes: {}", candidate_account.candidate_name, candidate_account.candidate_votes);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -53,7 +76,7 @@ pub struct Vote<'info> {
     #[account(
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -77,7 +100,7 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -115,6 +138,16 @@ pub struct InitializePoll<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(poll_id: u64)]
+pub struct GetPollResults<'info> {
+    #[account(
+        seeds = [poll_id.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub poll: Account<'info, Poll>,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Poll {
@@ -124,4 +157,13 @@ pub struct Poll {
     pub poll_start: u64,
     pub poll_end: u64,
     pub candidate_amount: u64,
+    pub total_votes: u64,
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Voting has not started yet.")]
+    PollNotStarted,
+    #[msg("Voting has ended.")]
+    PollEnded,
 }

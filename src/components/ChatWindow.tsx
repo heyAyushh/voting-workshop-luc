@@ -102,7 +102,6 @@ export function ChatWindow(props: {
         id: messages.length.toString(),
         content: input,
         role: "user",
-        parts: [{ type: "text", text: input }],
       });
       setMessages(messagesWithUserReply);
       const response = await fetch(endpoint, {

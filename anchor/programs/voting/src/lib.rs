@@ -21,7 +21,18 @@ pub mod voting {
                             description: String,
                             poll_start: u64,
                             poll_end: u64) -> Result<()> {
-
+        if !is_valid_unix_timestamp(poll_start) || !is_valid_unix_timestamp(poll_end) {
+            return err!(VotingError::InvalidTimestamp);
+        }
+        // Ensure poll_end is in the future
+        let current_time = Clock::get()?.unix_timestamp as u64;
+        if poll_end <= current_time {
+            return err!(VotingError::PollEndedInPast);
+        }
+        // Ensure poll_start is before poll_end
+        if poll_start >= poll_end {
+            return err!(VotingError::InvalidPollDuration);
+        }
         let poll = &mut ctx.accounts.poll;
         poll.poll_id = poll_id;
         poll.description = description;
@@ -68,6 +79,20 @@ pub mod voting {
         Ok(())
     }
 
+}
+fn is_valid_unix_timestamp(timestamp: u64) -> bool {
+    let max_reasonable_timestamp = 1893456000; // Approximately 2029-30
+    timestamp > 0 && timestamp < max_reasonable_timestamp
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Invalid timestamp provided")]
+    InvalidTimestamp,
+    #[msg("Poll end time must be in the future")]
+    PollEndedInPast,
+    #[msg("Poll start time must be before end time")]
+    InvalidPollDuration,
 }
 
 #[derive(Accounts)]

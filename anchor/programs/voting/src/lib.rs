@@ -16,6 +16,7 @@ declare_id!("coUnmi3oBUtwtd9fjeAvSsJssXh5A5xyPbhpewyzRVF");
 pub mod voting {
     use super::*;
 
+    // Initializes a poll
     pub fn initialize_poll(ctx: Context<InitializePoll>, 
                             poll_id: u64,
                             description: String,
@@ -42,6 +43,7 @@ pub mod voting {
         Ok(())
     }
 
+    // Initializes a candidate for a given poll
     pub fn initialize_candidate(ctx: Context<InitializeCandidate>, 
                                 candidate_name: String,
                                 _poll_id: u64
@@ -56,7 +58,13 @@ pub mod voting {
         Ok(())
     }
 
+    // Allows a signer to vote for a candidate, ensuring they can only vote once
     pub fn vote(ctx: Context<Vote>, _candidate_name: String, _poll_id: u64) -> Result<()> {
+        // Check if the signer has already voted for this poll
+        if ctx.accounts.voter_record.voted {
+            return Err(error!(VotingError::AlreadyVoted)); // Return an error if they have already voted
+        }
+
         //changes 2
         let poll = &ctx.accounts.poll;
         let current_time = Clock::get()?.unix_timestamp as u64;
@@ -72,13 +80,17 @@ pub mod voting {
         );
         //end of change
         let candidate = &mut ctx.accounts.candidate;
-        candidate.candidate_votes += 1;
+        candidate.candidate_votes += 1; // Increment the vote for the selected candidate
 
-        msg!("Voted for candidate: {}", candidate.candidate_name);
-        msg!("Votes: {}", candidate.candidate_votes);
+        // Record that the signer has voted
+        let voter_record = &mut ctx.accounts.voter_record;
+        voter_record.voted = true;
+        voter_record.poll = ctx.accounts.poll.key();
+
+        msg!("Voted for candidate: {}", candidate.candidate_name); // Log the vote
+        msg!("Votes: {}", candidate.candidate_votes); // Log the updated vote count
         Ok(())
     }
-
 }
 fn is_valid_unix_timestamp(timestamp: u64) -> bool {
     let max_reasonable_timestamp = 1893456000; // Approximately 2029-30
@@ -99,12 +111,12 @@ pub enum VotingError {
 #[instruction(candidate_name: String, poll_id: u64)]
 pub struct Vote<'info> {
     #[account(mut)]
-    pub signer: Signer<'info>,
+    pub signer: Signer<'info>, // The signer (voter) account
 
     #[account(
-        seeds = [poll_id.to_le_bytes().as_ref()],
+        seeds = [poll_id.to_le_bytes().as_ref()], // Unique seeds for poll account
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -114,9 +126,18 @@ pub struct Vote<'info> {
     )]
     pub candidate: Account<'info, Candidate>,
 
+    // Voter record is created if it doesn't exist; ensures only one vote per user per poll
+    #[account(
+      init_if_needed,
+      payer = signer,
+      space = 8 + VoterRecord::INIT_SPACE, // Space allocation for VoterRecord
+      seeds = [signer.key().as_ref(), poll_id.to_le_bytes().as_ref()], // Unique seeds for voter record
+      bump
+    )]
+    pub voter_record: Account<'info, VoterRecord>,
+
     pub system_program: Program<'info, System>,
 }
-
 
 #[derive(Accounts)]
 #[instruction(candidate_name: String, poll_id: u64)]
@@ -128,7 +149,7 @@ pub struct InitializeCandidate<'info> {
         mut,
         seeds = [poll_id.to_le_bytes().as_ref()],
         bump
-      )]
+    )]
     pub poll: Account<'info, Poll>,
 
     #[account(
@@ -147,7 +168,7 @@ pub struct InitializeCandidate<'info> {
 pub struct Candidate {
     #[max_len(32)]
     pub candidate_name: String,
-    pub candidate_votes: u64,
+    pub candidate_votes: u64, // Vote count for this candidate
 }
 
 #[derive(Accounts)]
@@ -171,8 +192,21 @@ pub struct InitializePoll<'info> {
 pub struct Poll {
     pub poll_id: u64,
     #[max_len(200)]
-    pub description: String,
-    pub poll_start: u64,
-    pub poll_end: u64,
-    pub candidate_amount: u64,
+    pub description: String, // Description of the poll
+    pub poll_start: u64, // Poll start timestamp
+    pub poll_end: u64, // Poll end timestamp
+    pub candidate_amount: u64, // Number of candidates in the poll
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct VoterRecord {
+    pub voted: bool, // Flag to track if the voter has voted
+    pub poll: Pubkey, // The poll the voter has voted in
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("This address has already voted for this poll")]
+    AlreadyVoted, // Error if the user tries to vote more than once
 }

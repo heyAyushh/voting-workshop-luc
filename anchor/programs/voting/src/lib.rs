@@ -1,7 +1,15 @@
 #![allow(clippy::result_large_err)]
 
 use anchor_lang::prelude::*;
-
+//changes #1
+#[error_code]
+pub enum VotingError {
+    #[msg("The poll has not started yet")]
+    PollNotStarted,
+    #[msg("The poll has already ended")]
+    PollEnded,
+}
+//end 
 declare_id!("coUnmi3oBUtwtd9fjeAvSsJssXh5A5xyPbhpewyzRVF");
 
 #[program]
@@ -14,7 +22,18 @@ pub mod voting {
                             description: String,
                             poll_start: u64,
                             poll_end: u64) -> Result<()> {
-
+        if !is_valid_unix_timestamp(poll_start) || !is_valid_unix_timestamp(poll_end) {
+            return err!(VotingError::InvalidTimestamp);
+        }
+        // Ensure poll_end is in the future
+        let current_time = Clock::get()?.unix_timestamp as u64;
+        if poll_end <= current_time {
+            return err!(VotingError::PollEndedInPast);
+        }
+        // Ensure poll_start is before poll_end
+        if poll_start >= poll_end {
+            return err!(VotingError::InvalidPollDuration);
+        }
         let poll = &mut ctx.accounts.poll;
         poll.poll_id = poll_id;
         poll.description = description;
@@ -32,6 +51,10 @@ pub mod voting {
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_name = candidate_name;
         candidate.candidate_votes = 0;
+
+        let poll = &mut ctx.accounts.poll;
+        poll.candidate_amount += 1; // Increment the candidate count
+
         Ok(())
     }
 
@@ -42,6 +65,20 @@ pub mod voting {
             return Err(error!(VotingError::AlreadyVoted)); // Return an error if they have already voted
         }
 
+        //changes 2
+        let poll = &ctx.accounts.poll;
+        let current_time = Clock::get()?.unix_timestamp as u64;
+        
+        require!(
+            current_time >= poll.poll_start,
+            VotingError::PollNotStarted
+        );
+        
+        require!(
+            current_time <= poll.poll_end,
+            VotingError::PollEnded
+        );
+        //end of change
         let candidate = &mut ctx.accounts.candidate;
         candidate.candidate_votes += 1; // Increment the vote for the selected candidate
 
@@ -54,6 +91,20 @@ pub mod voting {
         msg!("Votes: {}", candidate.candidate_votes); // Log the updated vote count
         Ok(())
     }
+}
+fn is_valid_unix_timestamp(timestamp: u64) -> bool {
+    let max_reasonable_timestamp = 1893456000; // Approximately 2029-30
+    timestamp > 0 && timestamp < max_reasonable_timestamp
+}
+
+#[error_code]
+pub enum VotingError {
+    #[msg("Invalid timestamp provided")]
+    InvalidTimestamp,
+    #[msg("Poll end time must be in the future")]
+    PollEndedInPast,
+    #[msg("Poll start time must be before end time")]
+    InvalidPollDuration,
 }
 
 #[derive(Accounts)]
